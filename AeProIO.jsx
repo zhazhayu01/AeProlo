@@ -127,13 +127,19 @@
             
             rootGroup.add("statictext", undefined, "项目根目录:");
             var rootText = rootGroup.add("edittext", undefined, this.mainWin.projectRoot);
-            rootText.preferredSize = [290, 20];
+            rootText.preferredSize = [240, 20];
             rootText.enabled = false;
+            
+            
+            var levelText = rootGroup.add("edittext", undefined, "3");
+            levelText.preferredSize = [30, 20];
+            levelText.helpTip = "回退目录层级";
+            
             var refreshRootBtn = rootGroup.add("button", undefined, "刷新");
             refreshRootBtn.preferredSize = [60, 20];
 
             refreshRootBtn.onClick = function() {
-                that.mainWin.detectProjectRoot();
+                that.mainWin.detectProjectRoot(levelText.text);
                 rootText.text = that.mainWin.projectRoot;
                 alert("项目根目录刷新成功!\n当前路径: " + that.mainWin.projectRoot);
             };
@@ -189,7 +195,7 @@
             assetGroup.alignChildren = ["left", "center"];
             assetGroup.spacing = 10;
 
-            assetGroup.add("statictext", undefined, "相对路径:");
+            assetGroup.add("statictext", undefined, "映射路径:");
             var assetPathText = assetGroup.add("edittext", undefined, "");
             assetPathText.preferredSize = [290, 20];
             var assetBrowseBtn = assetGroup.add("button", undefined, "浏览...");
@@ -666,7 +672,9 @@
                 
                 for (var i = 0; i < this.pathMappings.length; i++) {
                     var mapping = this.pathMappings[i];
-                    var assetFolderPath = this.getAbsolutePath(mapping.assetPath);
+                    var assetFolderPath = mapping.assetPath.charAt(1) === ':' || mapping.assetPath.indexOf('//') === 0 ?
+                        mapping.assetPath : // 绝对路径
+                        this.getAbsolutePath(mapping.assetPath); // 相对路径
                     $.writeln("处理文件夹: " + assetFolderPath);
                     
                     var assetFolder = new Folder(assetFolderPath);
@@ -753,11 +761,21 @@
                     return;
                 }
 
-                var outputFolder = new Folder(this.getAbsolutePath(exportSetting.outputPath));
+                // 创建输出文件夹
+                var outputFolder;
+                if (exportSetting.outputPath.charAt(1) === ':' || exportSetting.outputPath.indexOf('//') === 0) {
+                    // 绝对路径
+                    outputFolder = new Folder(exportSetting.outputPath);
+                } else {
+                    // 相对路径
+                    outputFolder = new Folder(this.getAbsolutePath(exportSetting.outputPath));
+                }
+                
                 if (!outputFolder.exists) {
                     outputFolder.create();
                 }
 
+                // 获取激活的合成
                 var activeComp = app.project.activeItem;
                 if (activeComp instanceof CompItem) {
                     $.writeln("发现激活的合成: " + activeComp.name);
@@ -765,6 +783,7 @@
                     return;
                 }
 
+                // 获取选中的合成
                 var selectedItems = [];
                 for (var i = 1; i <= app.project.numItems; i++) {
                     var item = app.project.item(i);
@@ -772,7 +791,7 @@
                         selectedItems.push(item);
                     }
                 }
-
+                // 如果没有选中合成，则提示用户选择
                 if (selectedItems.length === 0) {
                     alert("先选择要导出的合成！");
                     return;
@@ -797,6 +816,7 @@
             return path.replace(/\//g, "\\");
         };
 
+        // 创建AE文件夹
         this.ensureAEFolder = function(folderPath) {
             try {
                 if (!folderPath) return null;
@@ -819,7 +839,8 @@
                 return null;
             }
         };
-
+        
+        // 创建子文件夹
         this.ensureAESubFolder = function(parentFolder, relativePath) {
             try {
                 if (!relativePath) return parentFolder;
@@ -855,6 +876,7 @@
             }
         };
 
+        // 获取文件夹内容
         this.getFolderContentsWithStructure = function(folder, basePath) {
             var items = [];
             basePath = basePath || "";
@@ -893,6 +915,7 @@
             return items;
         };
 
+        // 验证媒体文件
         this.isValidMediaFile = function(file) {
             var extension = file.name.toLowerCase().split('.').pop();
             var validExtensions = ['ai', 'eps', 'ps', 'psd', 'jpg', 'jpeg', 'png', 'gif', 'tif', 'tiff', 
@@ -906,6 +929,7 @@
             return false;
         };
 
+        // 导入文件到文件夹
         this.importFileToFolder = function(file, folder) {
             try {
                 var importOptions = new ImportOptions();
@@ -923,6 +947,7 @@
             }
         };
 
+        // 添加到渲染队列
         this.addToRenderQueue = function(comp, outputFolder, exportSetting) {
             try {
                 // 添加到渲染队列
@@ -946,6 +971,7 @@
             }
         };
 
+        // 验证配置
         this.validateConfig = function() {
             $.writeln("\n=== 验证配置 ===");
             if (!this.pathMappings) {
@@ -1017,12 +1043,21 @@
             return modules;
         };
 
-        // 在 AeProIO 类中添加 detectProjectRoot 方法
-        this.detectProjectRoot = function() {
+        // 修改 detectProjectRoot 方法
+        this.detectProjectRoot = function(levels) {
             try {
                 if (app.project.file) {
-                    var projectPath = app.project.file.parent.parent.parent.fsName;
-                    this.projectRoot = projectPath;
+                    var currentPath = app.project.file.parent;
+                    // 默认回退三级，除非指定了其他层级
+                    var levelsToGoUp = parseInt(levels) || 3;
+                    
+                    for (var i = 0; i < levelsToGoUp; i++) {
+                        if (currentPath && currentPath.parent) {
+                            currentPath = currentPath.parent;
+                        }
+                    }
+                    
+                    this.projectRoot = currentPath.fsName;
                 }
             } catch(err) {
                 alert("获取项目根目录失败: " + err.toString());
